@@ -51,10 +51,8 @@ def compute_union_bbox(bboxes):
     return [[min_x, min_y], [max_x, min_y], [max_x, max_y], [min_x, max_y]]
 
 def detect_trade_and_order_lines(grouped_lines, max_trade_lines=2):
-    import re
-    regex_trade = re.compile(r"\d{2}:\d{2}:\d{2}.*M")
-    regex_order = re.compile(r"\d{1,3}(?:,\d{3})?\s+\d{2}\.\d{2}\s+\d{2}\.\d{2}\s+\d{1,3}(?:,\d{3})?")
-
+    regex_trade = re.compile(r"\d{2}:\d{2}:\d{2}")
+    regex_order = re.compile(r"\d{1,3}(?:,\d{3})?\s+\d+\.\d{1,2}\s+\d+\.\d{1,2}\s+\d{1,3}(?:,\d{3})?")
     trade_entries = []
     order_entries = []
 
@@ -67,14 +65,17 @@ def detect_trade_and_order_lines(grouped_lines, max_trade_lines=2):
             trade_entries.append({'text': text_line, 'bbox': bbox})
         elif regex_order.match(text_line):
             order_entries.append({'text': text_line, 'bbox': bbox})
-
-    # Nếu có ít nhất 2 dòng trade, gộp bbox của 2 dòng đầu và gán lại cho cả 2
     if len(trade_entries) >= 2:
         bbox_union = compute_union_bbox([trade_entries[0]['bbox'], trade_entries[1]['bbox']])
         trade_entries[0]['bbox'] = bbox_union
         trade_entries[1]['bbox'] = bbox_union
-        trade_entries = trade_entries[:2]  # chỉ lấy 2 dòng đầu
-
+        trade_entries = trade_entries[:2]
+    if len(order_entries) >=3:
+        bbox_union_order=compute_union_bbox([order_entries[0]['bbox'],order_entries[1]['bbox'],order_entries[2]['bbox']])
+        order_entries[0]['bbox']=bbox_union_order
+        order_entries[1]['bbox']=bbox_union_order
+        order_entries[2]['bbox']=bbox_union_order
+        order_entries=order_entries[:3]
     return trade_entries, order_entries
 def classify_ocr_regions(result):
     entries = result[0]
@@ -97,12 +98,12 @@ def classify_ocr_regions(result):
                     int(entry[0][2][0]), int(entry[0][2][1])
                 )
             })
-    # num_stocks=len(stock_names)/2
-    # print(f"Đã nhận diện được {num_stocks} mã chứng khoán")
     return {
         "stocks": stock_names,
         "order_book": order_lines,
-        "matched_trades": trade_lines
+        "matched_trades": trade_lines,
+        "trade_bbox": trade_lines[0]['bbox'] if trade_lines else None,
+        "order_bbox": order_lines[0]['bbox'] if order_lines else None,
     }
 
 def extract_stock_codes_for_filenames(stocks):
