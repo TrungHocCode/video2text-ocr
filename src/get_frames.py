@@ -27,8 +27,9 @@ def extract_frames(video_path, delay=0.4,save_dir=None):
         all_frames.append(frame)
         count += 1
 
+        # Nếu muốn lưu frames đã trích xuất từ video unconmment đoạn code dưới và tạo sẵn thư mục để chứa frames rồi đưa voà tham số save_dir của hàm 
         # if save_dir:
-        #     frame_filename = os.path.join(save_dir, f"frame_{count:04d}.jpg")
+        #     frame_filename = os.path.join(save_dir, f"frame_{count:04d}.jpg") 
         #     cv2.imwrite(frame_filename, frame)
 
         logger.info(f"Đã trích xuất và lưu frame {count}")
