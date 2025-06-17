@@ -3,6 +3,7 @@ from get_frames import extract_frames
 from json_process import save_json_per_stock
 from paddleocr import PaddleOCR
 from logger_config import logger
+from excel_process import export_to_excel
 # def main():
 #     logger.info("Chương trình bắt đầu...")
 #     try:
@@ -55,8 +56,11 @@ def main():
                 stock_require=user_stock_require,
                 saved_bboxes=saved_bboxes,frame_id=idx
             )
-
         elapsed = time.time() - start_time
+        for i in range(3):
+            name=saved_bboxes[i]['stock_code']
+            json_path=f"output/{name}.json"
+            export_to_excel(json_path)
         logger.info(f"Hoàn tất. Tổng thời gian xử lý: {elapsed:.2f} giây")
 
     except Exception as e:

@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 from ocr_process import split_frame_by_stock_count, classify_ocr_regions,extract_stock_codes_for_filenames
 from collections import OrderedDict
+from excel_process import export_to_excel
 def extract_json_from_ocr(ocr_result):
     trade_result = ocr_result['matched_trades']
     order_result = ocr_result['order_book']
@@ -95,7 +96,40 @@ def merged_json(order_json, trade_json):
     return merged
 # def is_duplicate(dict1, dict2):
 #     return dict1==dict2
+def parse_time(time_str):
+    return datetime.strptime(time_str, "%H:%M:%S")
 
+def is_duplicate(dict1, dict2):
+    return dict1 == dict2
+
+def clean_ocr_json(data, group_size=5):
+    # Sắp xếp theo timestamp tăng dần
+    sorted_items = sorted(data.items(), key=lambda x: parse_time(x[0]))
+    
+    cleaned_data = OrderedDict()
+    i = 0
+
+    while i < len(sorted_items):
+        # Lấy nhóm timestamps
+        group = sorted_items[i:i+group_size]
+        unique_group = []
+
+        for j, (time_j, content_j) in enumerate(group):
+            is_dup = False
+            for (time_k, content_k) in unique_group:
+                if is_duplicate(content_j, content_k):
+                    is_dup = True
+                    break
+            if not is_dup:
+                unique_group.append((time_j, content_j))
+
+        # Thêm các bản ghi không trùng lặp vào kết quả
+        for time_key, val in unique_group:
+            cleaned_data[time_key] = val
+
+        i += group_size
+
+    return cleaned_data
 def frame_changed(prev_region, curr_region, threshold=25, change_ratio=0.0005):
     if prev_region is None:
         return True
@@ -186,7 +220,7 @@ def save_json_per_stock(frame, ocr, prev_regions=None, stock_count=3, output_dir
             json_result = merged_json(order_json,trade_json)
             timestamp = datetime.now().strftime("%H:%M:%S")
             data = {timestamp: json_result[timestamp]}
-
+            cleaned_data=clean_ocr_json(data)
             file_path = f"{output_dir}/{stock_code}.json"
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
@@ -194,42 +228,8 @@ def save_json_per_stock(frame, ocr, prev_regions=None, stock_count=3, output_dir
             except (FileNotFoundError, json.JSONDecodeError):
                 existing_data = {}
 
-            existing_data.update(data)
+            existing_data.update(cleaned_data)
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, ensure_ascii=False, indent=4)
-
     return prev_regions, saved_bboxes
-def parse_time(time_str):
-    return datetime.strptime(time_str, "%H:%M:%S")
 
-def is_duplicate(dict1, dict2):
-    return dict1 == dict2
-
-def clean_ocr_json(data, group_size=5):
-    # Sắp xếp theo timestamp tăng dần
-    sorted_items = sorted(data.items(), key=lambda x: parse_time(x[0]))
-    
-    cleaned_data = OrderedDict()
-    i = 0
-
-    while i < len(sorted_items):
-        # Lấy nhóm timestamps
-        group = sorted_items[i:i+group_size]
-        unique_group = []
-
-        for j, (time_j, content_j) in enumerate(group):
-            is_dup = False
-            for (time_k, content_k) in unique_group:
-                if is_duplicate(content_j, content_k):
-                    is_dup = True
-                    break
-            if not is_dup:
-                unique_group.append((time_j, content_j))
-
-        # Thêm các bản ghi không trùng lặp vào kết quả
-        for time_key, val in unique_group:
-            cleaned_data[time_key] = val
-
-        i += group_size
-
-    return cleaned_data
