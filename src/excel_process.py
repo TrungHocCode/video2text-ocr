@@ -1,20 +1,17 @@
-
+import json
 import os
 import openpyxl
 from openpyxl.styles import PatternFill
 from datetime import datetime
 import sys
 
-# Hàm hỗ trợ cơ bản
 def convert_to_int(value):
-    """Chuyển đổi chuỗi số có dấu phẩy thành số nguyên, trả về 0 nếu lỗi hoặc thiếu."""
     try:
         return int(str(value).replace(',', ''))
     except (ValueError, TypeError):
         return 0
 
 def to_float(value):
-    """Chuyển đổi giá trị thành số thực, thay dấu phẩy bằng dấu chấm, trả về 0.0 nếu lỗi hoặc thiếu."""
     try:
         if isinstance(value, str):
             value = value.replace(',', '.')
@@ -23,7 +20,6 @@ def to_float(value):
         return 0.0
 
 def is_float(value):
-    """Kiểm tra xem giá trị có thể chuyển thành số thực không."""
     try:
         float(str(value).replace(',', '.'))
         return True
@@ -31,8 +27,7 @@ def is_float(value):
         return False
 
 def calculate_diff_for_side(rows, i, side):
-    """Tính chênh lệch khối lượng chờ mua hoặc chờ bán so với timestamp trước đó."""
-    if i == 0:  # Dòng đầu tiên không có dòng trước để so sánh
+    if i == 0:  
         return [0] * 3
     prev_row = rows[i - 1]
     current_row = rows[i]
@@ -63,7 +58,6 @@ def calculate_diff_for_side(rows, i, side):
     return diffs
 
 def mark_price_change(all_rows):
-    """Đánh dấu các hàng có thay đổi giá chờ mua hoặc chờ bán, chỉ khi dữ liệu đầy đủ."""
     for i in range(1, len(all_rows)):
         change = False
         direction = None
@@ -102,7 +96,6 @@ def mark_price_change(all_rows):
     return all_rows
 
 def export_to_excel(json_file):
-    """Xử lý file JSON và xuất ra Excel, điều chỉnh trật tự và bỏ qua dữ liệu lặp lại."""
     try:
         with open(json_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -116,7 +109,7 @@ def export_to_excel(json_file):
         entry = data[timestamp]
         zone = entry.get('zone', [{} for _ in range(3)])
         row = {
-            'Thời gian': timestamp,
+            'Thời gian': float(timestamp),
             'Giá': entry.get('Giá', {}).get('Lần 1', '') or '0',
             'Khối lượng': entry.get('KL', {}).get('Lần 1', '') or '0',
             'Loại': entry.get('M/B', {}).get('Lần 1', '') or '',
@@ -130,14 +123,12 @@ def export_to_excel(json_file):
             row[f'Giá chờ bán {i+1}'] = zone_data.get(f'Gia_ban {i+1}', '') or ''
         all_rows.append(row)
     
-    # Tính chênh lệch
     for i in range(len(all_rows)):
         for side in ['mua', 'bán']:
             diffs = calculate_diff_for_side(all_rows, i, side)
             for j in range(3):
                 all_rows[i][f"Tăng/giảm chờ {side} {j+1}"] = diffs[j]
     
-    # Xử lý lặp lại trước khi sắp xếp ngược
     last_change = None
     for i in range(len(all_rows)):
         curr_row = all_rows[i]
@@ -160,10 +151,7 @@ def export_to_excel(json_file):
                     'Khối lượng': curr_row['Khối lượng'],
                     'Loại': curr_row['Loại']
                 }
-    
-    # Sắp xếp ngược từ mới nhất đến cũ nhất
-    all_rows = sorted(all_rows, key=lambda x: datetime.strptime(x['Thời gian'], "%H:%M:%S"), reverse=True)
-    
+    all_rows = sorted(all_rows, key=lambda x: x['Thời gian'], reverse=True)
     all_rows = mark_price_change(all_rows)
     
     wb = openpyxl.Workbook()
