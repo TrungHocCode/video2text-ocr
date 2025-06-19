@@ -14,10 +14,6 @@ def extract_frames(video_path, delay=0.4,save_dir=None):
 
     all_frames = []
     count = 0
-
-    # if save_dir:
-    #     os.makedirs(save_dir, exist_ok=True)  # Tạo thư mục nếu chưa tồn tại
-
     for t in time_points:
         frame_id = int(t * fps)
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_id)
