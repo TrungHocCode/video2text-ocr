@@ -95,90 +95,75 @@ def frame_changed(prev_region, curr_region, threshold=25, change_ratio=0.0005):
     total_pixels = thresh.size
     ratio = changed_pixels / total_pixels
     return ratio > change_ratio
-import matplotlib.pyplot as plt
-def show_img(img):
-    plt.imshow(img)
-    plt.title("Ảnh đã crop")
-    plt.axis('off')
-    plt.show()
-def save_json_per_stock(frame, ocr, prev_regions=None, stock_count=3, output_dir="./", stock_require=1, saved_bboxes=None,frame_id=1):
+def extract_first_frame(ocr,frame):
+    """
+    Phân tích frame đầu tiên để lấy số lượng mã, và thông tin bbox (trade + order) cho từng mã.
+    """
+    # Tách các vùng theo số mã cổ phiếu
+    first_result=classify_ocr_regions(ocr.ocr(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY),cls=False))['stocks']
+    stocks_count=int(len(first_result))
+    stock_codes=first_result
+    stock_regions=split_frame_by_stock_count(frame,stocks_count)
+    stock_infos = []
+    for idx, region in enumerate(stock_regions):
+        ocr_result=ocr.ocr(region,cls=False)
+        result=classify_ocr_regions(ocr_result)
+
+        stock_code = stock_codes[idx]['text']
+        trade_bbox = result.get("trade_bbox", [])
+        order_bbox = result.get("order_bbox", [])
+        
+        stock_infos.append({
+            "stock_code": stock_code,
+            "trade_bbox": trade_bbox,
+            "order_bbox": order_bbox
+        })
+
+    return {
+        "stock_count": len(stock_infos),
+        "stocks": stock_infos
+    }
+def save_json_per_stock(frame, ocr, prev_regions=None, stock_count=3, output_dir="./", saved_bboxes=None,frame_id=1):
     stock_regions = split_frame_by_stock_count(frame, stock_count)
 
     if prev_regions is None:
         prev_regions = [None] * stock_count
-
-    if saved_bboxes is None:
-        saved_bboxes = [None] * stock_count
-
     for idx, region in enumerate(stock_regions):
-        if idx == stock_require:
-            break
-        if saved_bboxes[idx] is None:
-            prev_regions[idx] = region.copy()
-
-            ocr_result = ocr.ocr(region, cls=False)
-            result = classify_ocr_regions(ocr_result)
-            stock_codes = extract_stock_codes_for_filenames(result['stocks'])
-            if not stock_codes:
-                continue
-
-            stock_code = stock_codes[0]
-            saved_bboxes[idx] = {
-                "trade_bbox": result["trade_bbox"],
-                "order_bbox": result["order_bbox"],
-                "stock_code": stock_code
-            }
-            video_time=round(frame_id*0.3,2)
-            json_result = extract_json_from_ocr(result,video_time)
-            data = {video_time: json_result[video_time]}
-            file_path = f"{output_dir}/{stock_code}.json"
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    existing_data = json.load(f)
-            except (FileNotFoundError, json.JSONDecodeError):
-                existing_data = {}
-
-            existing_data.update(data)
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(existing_data, f, ensure_ascii=False, indent=4)
-
-        else:
+        if frame_id!=1:
             if not frame_changed(prev_regions[idx], region):
                 continue
+        prev_regions[idx] = region.copy()
+        trade_bbox = saved_bboxes[idx]["trade_bbox"]
+        order_bbox = saved_bboxes[idx]["order_bbox"]
+        stock_code = saved_bboxes[idx]["stock_code"]
+        if trade_bbox:
+            x1, y1 = int(trade_bbox[0][0]), int(trade_bbox[0][1])
+            x2, y2 = int(trade_bbox[2][0])+20, int(trade_bbox[2][1]+20)
+            trade_region = region[y1:y2, x1:x2]
+            trade_ocr=ocr.ocr(trade_region,cls=False)
+        if order_bbox:
+            x1, y1 = int(order_bbox[0][0]), int(order_bbox[0][1])
+            x2, y2 = int(order_bbox[2][0]), int(order_bbox[2][1])
+            order_region = region[y1:y2, x1:x2]
+            order_ocr=ocr.ocr(order_region,cls=False)
+        video_time=round(frame_id*0.4,2)
 
-            prev_regions[idx] = region.copy()
+        order_result=classify_ocr_regions(order_ocr)
+        trade_result=classify_ocr_regions(trade_ocr)
 
-            trade_bbox = saved_bboxes[idx]["trade_bbox"]
-            order_bbox = saved_bboxes[idx]["order_bbox"]
-            stock_code = saved_bboxes[idx]["stock_code"]
-            if trade_bbox:
-                x1, y1 = int(trade_bbox[0][0]), int(trade_bbox[0][1])
-                x2, y2 = int(trade_bbox[2][0])+20, int(trade_bbox[2][1]+20)
-                trade_region = region[y1:y2, x1:x2]
-                trade_ocr=ocr.ocr(trade_region,cls=False)
-            if order_bbox:
-                x1, y1 = int(order_bbox[0][0]), int(order_bbox[0][1])
-                x2, y2 = int(order_bbox[2][0]), int(order_bbox[2][1])
-                order_region = region[y1:y2, x1:x2]
-                order_ocr=ocr.ocr(order_region,cls=False)
-            video_time=round(frame_id*0.3,2)
+        order_json=extract_json_from_ocr(order_result,video_time)
+        trade_json=extract_json_from_ocr(trade_result,video_time)
 
-            order_result=classify_ocr_regions(order_ocr)
-            trade_result=classify_ocr_regions(trade_ocr)
-
-            order_json=extract_json_from_ocr(order_result,video_time)
-            trade_json=extract_json_from_ocr(trade_result,video_time)
-
-            json_result = merged_json(order_json,trade_json)
-            data = {video_time: json_result[video_time]}
-            file_path = f"{output_dir}/{stock_code}.json"
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    existing_data = json.load(f)
-            except (FileNotFoundError, json.JSONDecodeError):
-                existing_data = {}
-            existing_data.update(data)
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(existing_data, f, ensure_ascii=False, indent=4)
-    return prev_regions, saved_bboxes
+        json_result = merged_json(order_json,trade_json)
+        data = {video_time: json_result[video_time]}
+        file_path = f"{output_dir}/{stock_code}.json"
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                existing_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            existing_data = {}
+        existing_data.update(data)
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(existing_data, f, ensure_ascii=False, indent=4)
+    return prev_regions
 

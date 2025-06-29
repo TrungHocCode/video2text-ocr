@@ -12,23 +12,27 @@ def clean_stock_code(raw_code):
     if len(raw_code) > 3:
         return raw_code[-3:]  # Lấy 7 ký tự cuối
     return raw_code
-
-def split_frame_by_stock_count(frame, stock_count, axis='vertical'):
+import cv2
+def split_frame_by_stock_count(frame, stock_count):
     h, w = frame.shape[:2]
     regions = []
-    if axis == 'vertical':
+    if stock_count == 4:
+        region_width = w // 2
+        region_height = h // 2
+        for row in range(2): 
+            for col in range(2):  
+                x1 = col * region_width
+                x2 = (col + 1) * region_width if col < 1 else w
+                y1 = row * region_height
+                y2 = (row + 1) * region_height if row < 1 else h
+                region = frame[y1:y2, x1:x2]
+                regions.append(region)
+    elif stock_count == 3:
         region_width = w // stock_count
         for i in range(stock_count):
             x1 = i * region_width
             x2 = (i + 1) * region_width if i < stock_count - 1 else w
             region = frame[:, x1:x2]
-            regions.append(region)
-    else:
-        region_height = h // stock_count
-        for i in range(stock_count):
-            y1 = i * region_height
-            y2 = (i + 1) * region_height if i < stock_count - 1 else h
-            region = frame[y1:y2, :]
             regions.append(region)
     return regions
 def group_entries_by_line(ocr_entries, y_threshold=10):
@@ -86,18 +90,28 @@ def classify_ocr_regions(result):
     # Bước 2: tách từng loại dòng
     trade_lines, order_lines = detect_trade_and_order_lines(grouped_lines)
 
-    # Bước 3: tìm vùng stock name
+    # Bước 3: tìm vùng stock name theo regex
     stock_names = []
+    pattern = re.compile(r'\bQ?([A-Z]{3})(?::|\s)?(HSX|HNX)\b')
+    invalid_codes = {'C', 'M', 'B', 'S8', 'TMCP', '22'}  # Danh sách mã không hợp lệ
+
+    # Duyệt qua các entry để tìm mã chứng khoán
     for entry in entries:
         text = entry[1][0]
-        if any(k in text for k in ("CTCP", "TMCP", "Chỉ số")):
-            stock_names.append({
-                "text": normalize_text(text),
-                "coords": (
-                    int(entry[0][0][0]), int(entry[0][0][1]),
-                    int(entry[0][2][0]), int(entry[0][2][1])
-                )
-            })
+        match = pattern.search(text)
+        if match:
+            stock_name = match.group(1)  # Lấy nhóm 3 ký tự trước :HSX
+            if stock_name not in invalid_codes:  # Kiểm tra mã không nằm trong danh sách không hợp lệ
+                stock_names.append({
+                    "text": stock_name,
+                    "coords": (
+                        int(entry[0][0][0]), int(entry[0][0][1]),
+                        int(entry[0][2][0]), int(entry[0][2][1])
+                    )
+                })
+        if len(stock_names) >= 4:  # Dừng khi đã tìm đủ 4 mã
+            break
+
     return {
         "stocks": stock_names,
         "order_book": order_lines,
@@ -105,7 +119,6 @@ def classify_ocr_regions(result):
         "trade_bbox": trade_lines[0]['bbox'] if trade_lines else None,
         "order_bbox": order_lines[0]['bbox'] if order_lines else None,
     }
-
 def extract_stock_codes_for_filenames(stocks):
     codes = []
     for stock in stocks:
